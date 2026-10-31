@@ -2,7 +2,7 @@
 
 FastAPI + PostgreSQL backend for the Hiring Intelligence Next.js app (`../hiring-intelligence-nextjs-tailwind-only`).
 
-**Status: Phase 1 (foundation) complete.** Authentication, sessions, workspaces/memberships/invitations, profile and workspace settings, onboarding preferences, lead and company reads (filters, sorting, pagination), and saved leads. The frontend still runs on fixtures until Phase 2 wires it to this API. See [docs/AUDIT.md](docs/AUDIT.md) for the audit, feature inventory, and phase plan.
+**Status:** Phase 1 complete; Phase 2 complete (saved searches and runs, alerts and in-app notifications, dashboard and analytics, demo seed); Phase 3 started (Postgres job queue + worker, server-side CSV/XLSX exports). The Next.js frontend is wired to this API. Current state: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). Audit and decisions: [docs/INTEGRATION_AUDIT.md](docs/INTEGRATION_AUDIT.md).
 
 ## Stack
 
@@ -31,7 +31,7 @@ docs/AUDIT.md             audit, feature inventory, decisions, phases
 ## Setup
 
 ```bash
-python3.11 -m venv env && source env/bin/activate
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                      # then set real DATABASE_URL / TEST_DATABASE_URL
 ```
@@ -52,6 +52,7 @@ CREATE DATABASE hiring_intelligence_test OWNER hiring_user ENCODING 'UTF8' TEMPL
 | Detect model/migration drift | `alembic check` |
 | Seed demo data (dev only) | `python -m scripts.seed_demo` (set `DEMO_USER_PASSWORD`, or one is generated and printed once) |
 | Run API | `uvicorn app.main:app --reload --port 8000` |
+| Run background worker (exports, cleanup; one or more processes) | `python -m app.tasks.worker` |
 | Tests | `pytest` |
 | Lint / format | `ruff check . && ruff format --check .` |
 | OpenAPI | `http://localhost:8000/docs` and `/api/v1/openapi.json` (disabled in production) |
@@ -98,6 +99,32 @@ Rate limits, token lifetimes, and page sizes are also settings (see `app/core/co
 \* Enforced once those features land. A workspace always keeps at least one owner. Any member may leave.
 
 - **Audit log** (`audit_events`): register, login, failed login, logout, password change/reset, profile and email changes, workspace updates, role changes, member removal, invitation create/revoke/accept, lead save/unsave.
+
+## API (Phase 2 and 3 additions)
+
+Same conventions as below. Workspace always comes from the session; another workspace's records return 404.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/leads/count` | Same filters as `/leads` → `{total}` |
+| GET / POST | `/saved-searches` | List (`active`, `sort=updatedAt\|name\|lastRunAt`); create `{name, criteria, frequency, isActive, notifyInApp, notifyEmail}` (409 on duplicate name) |
+| GET / PATCH / DELETE | `/saved-searches/{id}` | Edit/delete: creator or admin+ (D2.1). Changing `criteria` resets match history |
+| POST | `/saved-searches/{id}/duplicate` | Unique "(copy)" name, no run history |
+| POST | `/saved-searches/{id}/run` | Runs in the request; 409 `RUN_IN_PROGRESS` if already running |
+| GET | `/saved-searches/{id}/runs`, `/saved-searches/{id}/results` | Run history; live matches with `isNew` (first matched by the latest run) |
+| GET | `/alerts` | Caller's alerts: `unread`, `type`, `savedSearchId`; each item has per-channel delivery status |
+| GET | `/alerts/unread-count` | `{count}` |
+| PATCH | `/alerts/{id}` | `{read?, paused?}`; pause applies to the alert's saved search (D2.3) |
+| POST | `/alerts/mark-all-read` | Caller's rows in this workspace → `{updated}` |
+| DELETE | `/alerts/{id}` | Hides for the caller only |
+| GET | `/dashboard` | `from`, `to` (dates in the workspace reporting timezone; default last 30 days; max 366) |
+| GET | `/analytics/{overview,leads-over-time,intent-distribution,technologies,industries,seniority,score-distribution,recent-activity}` | Same range parameters |
+| POST | `/exports` | `{format: csv\|xlsx, leadIds \| filters, idempotencyKey?}`; ≤1,000 rows → 201 succeeded, larger → 202 queued for the worker; >10,000 → 422 `EXPORT_TOO_LARGE` |
+| GET | `/exports`, `/exports/{id}`, `/exports/{id}/download` | Download: 409 not ready, 410 `EXPORT_EXPIRED` after 7 days |
+
+`SearchCriteria` (saved searches, exports, and `/leads` validation): `q, serviceTypes[], technologies[], technologyMatch, intents[], regions[], freshnessDays, minScore`; unknown keys → 422. Workspace settings gained `reportingTimezone` and `qualifiedThreshold` (default 75, D2.4).
+
+**Honest states:** saved-search counts are `null` until a real run; `scheduling.enabled` is `false` until the scheduler runs searches; email deliveries are recorded as `skipped` (`EMAIL_NOT_CONFIGURED`) while only the console adapter exists; `/ready` adds `warnings.worker` (`ok`/`stale`/`not_running`) without failing readiness.
 
 ## API (Phase 1)
 
@@ -154,11 +181,12 @@ async rewrites() {
 
 ## Demo data
 
-`scripts/seed_demo.py` loads the prototype's 8 companies and 8 leads (with timelines and score breakdowns) into a dedicated demo workspace owned by `demo@hiringintel.ai`. Every row is flagged `is_demo` and is private to that workspace, so real workspaces never see fixtures. The seed is idempotent, and re-running it does not touch existing rows' timestamps. It refuses to run in production. Two pieces are deliberately labelled rather than passed off as real: provenance is recorded as `source_type=demo_fixture` instead of the prototype's invented "Company Careers / Partner Feed", and the score breakdown is versioned `demo-fixture`. Saved searches and alerts will be seeded in Phase 2, when their tables exist. The prototype's vanity counts (e.g. "418 total matches") will not be seeded.
+`scripts/seed_demo.py` loads the prototype's 8 companies and 8 leads (with timelines and score breakdowns) into a dedicated demo workspace owned by `demo@hiringintel.ai`. Every row is flagged `is_demo` and is private to that workspace, so real workspaces never see fixtures. The seed is idempotent, and re-running it does not touch existing rows' timestamps. It refuses to run in production. Two pieces are deliberately labelled rather than passed off as real: provenance is recorded as `source_type=demo_fixture` instead of the prototype's invented "Company Careers / Partner Feed", and the score breakdown is versioned `demo-fixture`. It also creates four saved searches from the prototype's summaries and runs each once for real (so their counts are true for the demo data), plus the prototype's four alert texts flagged `is_demo`. The prototype's vanity counts (e.g. "418 total matches") are not seeded.
 
 ## Known issues and outstanding decisions
 
 **Environment**
+- This workspace copy uses its own UTF-8 databases (`leads_agent`, `leads_agent_test`) so its migrations cannot break the original `hiring-intelligence-backend` checkout, which shares the same Postgres server. Use `.venv` (the copied `env/` points at the original checkout's interpreter).
 - The local PostgreSQL cluster (and therefore both databases) uses **`SQL_ASCII` encoding with `C` collation**. The app forces `client_encoding=utf8` so text round-trips correctly, but Postgres does not validate UTF-8, and case-insensitive search does not fold non-ASCII characters. Recreate both databases as UTF-8 (commands above) and re-run `alembic upgrade head` and the seed. Production must use UTF-8.
 - The local `.env` previously contained the dev DB password in `.env.example`. That file now holds placeholders, and `.env` is git-ignored. Rotate that password if the folder was ever shared.
 
@@ -174,4 +202,4 @@ async rewrites() {
 - A scheduled cleanup job (Phase 3 worker) for expired sessions, reset tokens, and rate-limit buckets (`services.rate_limit.purge_expired`).
 - Backups: daily `pg_dump --format=custom` plus WAL/PITR from the managed provider. Restore with `pg_restore --clean --no-owner -d <db> <dump>`, then `alembic upgrade head`. Test restores periodically.
 
-**Not yet implemented:** saved searches and runs, alerts, dashboard and analytics (Phase 2); exports, the scoring engine, ingestion adapters, scheduling, notification delivery, and CRM/Slack/webhook integrations (Phase 3); frontend wiring (Phase 2).
+**Not yet implemented (Phase 3):** workflow orchestration records, source registry and ingestion (CSV import, ATS adapters), normalization/deduplication/company resolution, AI extraction and embeddings, the scoring engine (blocked on decision D3.5), freshness verification, scheduled saved searches, email delivery (blocked on D3.7), and CRM/Slack/webhook integrations. See docs/PROJECT_STATUS.md.
