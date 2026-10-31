@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BellRing, BookmarkCheck, BriefcaseBusiness, Building2, FileDown, LayoutDashboard, Settings, Sparkles, X } from "lucide-react";
+import { BarChart3, BellRing, BookmarkCheck, BriefcaseBusiness, Building2, FileDown, LayoutDashboard, Settings, X } from "lucide-react";
+import { useSession } from "@/components/providers/SessionProvider";
+import { initials, titleCase } from "@/lib/format";
 
 const navigation = [
   ["Overview", "/dashboard", LayoutDashboard],
@@ -17,6 +19,7 @@ const navigation = [
 
 export default function Sidebar({ open, onClose }) {
   const pathname = usePathname();
+  const { user, workspace } = useSession();
   return (
     <>
       {open ? <button aria-label="Close menu" onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/30 lg:hidden" /> : null}
@@ -36,7 +39,7 @@ export default function Sidebar({ open, onClose }) {
           {navigation.map(([label, href, Icon]) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
-              <Link key={href} href={href} onClick={onClose} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"}`}>
+              <Link key={href} href={href} onClick={onClose} aria-current={active ? "page" : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"}`}>
                 <Icon className={`h-4 w-4 ${active ? "text-brand-100" : "text-slate-500"}`} />
                 {label}
               </Link>
@@ -44,18 +47,10 @@ export default function Sidebar({ open, onClose }) {
           })}
         </nav>
 
-        <div className="space-y-3 border-t border-slate-800 p-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
-              <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-amber-400" />Verified feed usage</span>
-              <span>64%</span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full w-2/3 rounded-full bg-brand-500" /></div>
-            <p className="mt-2 text-[10px] text-slate-500">1,284 of 2,000 qualified lead credits</p>
-          </div>
-          <Link href="/settings/profile" onClick={onClose} className="flex items-center gap-3 rounded-xl p-2 hover:bg-slate-900">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-xs font-black">ZD</span>
-            <span className="min-w-0"><span className="block truncate text-xs font-bold">ZoneX Agency</span><span className="block truncate text-[10px] text-slate-500">demo@hiringintel.ai</span></span>
+        <div className="border-t border-slate-800 p-4">
+          <Link href="/settings/workspace" onClick={onClose} className="flex items-center gap-3 rounded-xl p-2 hover:bg-slate-900">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-xs font-black">{initials(workspace?.name)}</span>
+            <span className="min-w-0"><span className="block truncate text-xs font-bold">{workspace?.name}</span><span className="block truncate text-[10px] text-slate-500">{user?.email} · {titleCase(workspace?.role)}</span></span>
           </Link>
         </div>
       </aside>

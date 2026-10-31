@@ -1,15 +1,8 @@
 "use client";
 
+// UI preferences only (e.g. table vs card view). Business data and sessions live on the server.
 export const keys = {
-  session: "hi_session",
-  savedLeads: "hi_saved_leads",
-  savedSearches: "hi_saved_searches",
-  alerts: "hi_alerts",
-  exports: "hi_exports",
-  profile: "hi_profile",
-  workspace: "hi_workspace",
-  onboarding: "hi_onboarding",
-  integrations: "hi_integrations"
+  leadsView: "hi_pref_leads_view"
 };
 
 export function readStorage(key, fallback) {
@@ -24,5 +17,9 @@ export function readStorage(key, fallback) {
 
 export function writeStorage(key, value) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be unavailable (private mode, quota); preferences are optional.
+  }
 }
