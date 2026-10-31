@@ -1,0 +1,6 @@
+import Link from "next/link";
+import { Building2, Cable, Database, UserRound } from "lucide-react";
+import PageHeader from "@/components/ui/PageHeader";
+
+const sections=[['Profile','Personal details and user preferences','/settings/profile',UserRound],['Workspace','Organization defaults and targeting preferences','/settings/workspace',Building2],['Integrations','CRM, Slack and automation connectors','/settings/integrations',Cable],['Data Sources','Approved source registry and sync health','/settings/data-sources',Database]];
+export default function SettingsPage(){return <><PageHeader eyebrow="Workspace administration" title="Settings" description="Manage your user profile, organization defaults, integrations and source configuration."/><div className="grid gap-4 md:grid-cols-2">{sections.map(([title,desc,href,Icon])=><Link key={href} href={href} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-brand-200 hover:shadow-soft"><span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-600 transition group-hover:bg-brand-600 group-hover:text-white"><Icon className="h-5 w-5"/></span><h2 className="mt-4 text-sm font-black text-slate-900">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{desc}</p></Link>)}</div></>}
