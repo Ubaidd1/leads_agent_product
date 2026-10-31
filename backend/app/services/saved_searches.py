@@ -238,8 +238,13 @@ def duplicate_search(db: Session, ctx: RequestContext, search_id: uuid.UUID) -> 
 
 def execute_run(db: Session, search: SavedSearch, trigger: RunTrigger) -> SavedSearchRun:
     """Runs a search whose row the caller has locked. Commits; also used by the scheduler (Phase 3)."""
+    # Wall-clock start (Postgres now() is the transaction start, which would tie runs in one transaction).
     run = SavedSearchRun(
-        saved_search_id=search.id, workspace_id=search.workspace_id, trigger=trigger, status=RunStatus.RUNNING
+        saved_search_id=search.id,
+        workspace_id=search.workspace_id,
+        trigger=trigger,
+        status=RunStatus.RUNNING,
+        started_at=utcnow(),
     )
     db.add(run)
     db.flush()
@@ -292,6 +297,7 @@ def _record_failure(db: Session, search_id: uuid.UUID, workspace_id: uuid.UUID, 
         workspace_id=workspace_id,
         trigger=trigger,
         status=RunStatus.FAILED,
+        started_at=utcnow(),
         finished_at=utcnow(),
         error_code="RUN_FAILED",
         error_message="The search could not be run. Please try again.",
