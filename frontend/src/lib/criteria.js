@@ -80,3 +80,10 @@ export function criteriaSummary(criteria) {
   if (criteria.minScore != null) parts.push(`Score ${criteria.minScore}+`);
   return parts.length ? parts.join(" · ") : "All open leads";
 }
+
+/** "12 matching, 3 new" for a saved-search run, or its safe error message. */
+export function runSummary(run) {
+  if (!run) return null;
+  if (run.status === "failed") return run.errorMessage || "The run failed.";
+  return `${run.resultCount} matching, ${run.newCount} new${run.truncated ? " (capped at 10,000)" : ""}`;
+}

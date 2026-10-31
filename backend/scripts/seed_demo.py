@@ -5,7 +5,8 @@
 All rows are flagged ``is_demo`` and scoped to the demo workspace, so they are never visible to
 real workspaces. Refuses to run when ENVIRONMENT=production.
 
-Saved searches and alerts are seeded once their tables exist (Phase 2).
+Phase 2 adds four saved searches (each run once for real, so their counts are true for the demo
+data) and the prototype's four alert texts, flagged ``is_demo``.
 """
 
 import os
@@ -18,8 +19,22 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import SessionLocal
-from app.models import Company, HiringSignal, Lead, LeadScore, LeadSource, User, Workspace, WorkspaceMembership
-from app.models.enums import HiringIntent, Role, VerificationStatus
+from app.models import (
+    Alert,
+    Company,
+    HiringSignal,
+    Lead,
+    LeadScore,
+    LeadSource,
+    SavedSearch,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
+from app.models.enums import AlertType, HiringIntent, Role, RunTrigger, SearchFrequency, VerificationStatus
+from app.schemas.search import SearchCriteria
+from app.services import alerts as alert_service
+from app.services import saved_searches as search_service
 from app.utils.time import utcnow
 from scripts.demo_fixtures import COMPANIES, LEADS, TIMELINE, fixture_breakdown
 
@@ -158,6 +173,95 @@ def seed_leads(db: Session, workspace: Workspace, companies: dict[str, Company])
     return created
 
 
+# Criteria translated from the prototype's summaries (src/data/savedSearches.js). Its vanity counts
+# ("418 total matches") are not seeded; each search is run once against the demo data instead.
+SAVED_SEARCHES = [
+    (
+        "US React & Node Opportunities",
+        SearchFrequency.DAILY,
+        True,
+        {"technologies": ["React", "Node.js"], "regions": ["united-states"], "minScore": 80},
+    ),
+    (
+        "Global AI / LLM Demand",
+        SearchFrequency.INSTANT,
+        True,
+        {"technologies": ["LLM", "RAG", "Python"], "regions": ["worldwide"], "minScore": 85},
+    ),
+    (
+        "International Software Teams",
+        SearchFrequency.DAILY,
+        True,
+        {"serviceTypes": ["Software Development"], "regions": ["worldwide"], "minScore": 78},
+    ),
+    (
+        "Programmatic SEO Leads",
+        SearchFrequency.WEEKLY,
+        False,
+        {"technologies": ["SEO", "Next.js"], "regions": ["worldwide"], "minScore": 75},
+    ),
+]
+
+# The prototype's alert texts (src/data/alerts.js), stored as demo alerts rather than passed off as real events.
+DEMO_ALERTS = [
+    ("demo:alert-1", AlertType.DIGEST, "14 new high-intent AI companies matched", "Global AI / LLM Demand"),
+    (
+        "demo:alert-2",
+        AlertType.COMPANY_SIGNAL,
+        "NovaStack Labs hiring velocity increased 41%",
+        "US React & Node Opportunities",
+    ),
+    ("demo:alert-3", AlertType.COMPANY_SIGNAL, "CloudNova Systems added 3 AI roles", "Global AI / LLM Demand"),
+    ("demo:alert-4", AlertType.DIGEST, "Weekly lead digest is ready", "Programmatic SEO Leads"),
+]
+
+
+def seed_saved_searches(db: Session, workspace: Workspace) -> int:
+    owner_id = db.scalar(select(WorkspaceMembership.user_id).where(WorkspaceMembership.workspace_id == workspace.id))
+    created = 0
+    for name, frequency, active, criteria in SAVED_SEARCHES:
+        if db.scalar(select(SavedSearch.id).where(SavedSearch.workspace_id == workspace.id, SavedSearch.name == name)):
+            continue
+        search = SavedSearch(
+            workspace_id=workspace.id,
+            created_by_user_id=owner_id,
+            name=name,
+            criteria=SearchCriteria.model_validate(criteria).stored(),
+            frequency=frequency,
+            is_active=active,
+            notify_in_app=True,
+            notify_email=False,
+        )
+        db.add(search)
+        db.flush()
+        # A real run, so the counts shown are true for the demo data. Commits.
+        search_service.execute_run(db, search, RunTrigger.MANUAL)
+        created += 1
+    return created
+
+
+def seed_alerts(db: Session, workspace: Workspace) -> int:
+    created = 0
+    for key, alert_type, title, search_name in DEMO_ALERTS:
+        search_id = db.scalar(
+            select(SavedSearch.id).where(SavedSearch.workspace_id == workspace.id, SavedSearch.name == search_name)
+        )
+        if db.scalar(select(Alert.id).where(Alert.workspace_id == workspace.id, Alert.dedupe_key == key)):
+            continue
+        alert_service.create_alert(
+            db,
+            workspace_id=workspace.id,
+            alert_type=alert_type,
+            dedupe_key=key,
+            title=title,
+            detail=f"{search_name} (demo alert)",
+            saved_search_id=search_id,
+            is_demo=True,
+        )
+        created += 1
+    return created
+
+
 def main() -> int:
     settings = get_settings()
     if settings.environment == "production":
@@ -168,7 +272,11 @@ def main() -> int:
         companies = seed_companies(db, workspace)
         created = seed_leads(db, workspace, companies)
         db.commit()
+        searches = seed_saved_searches(db, workspace)
+        alerts = seed_alerts(db, workspace)
+        db.commit()
     print(f"Demo workspace ready: {len(companies)} companies, {created} new leads ({len(LEADS)} total).")
+    print(f"Saved searches created: {searches}; demo alerts created: {alerts}.")
     print(f"Sign in as {DEMO_EMAIL}")
     if generated_password:
         print(f"Generated password (shown once): {generated_password}")
