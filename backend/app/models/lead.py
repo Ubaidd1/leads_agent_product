@@ -19,6 +19,10 @@ class Lead(UUIDPrimaryKey, Timestamps, Base):
         Index("ix_leads_regions", "regions", postgresql_using="gin"),
         Index("ix_leads_score_id", "score", "id"),
         Index("ix_leads_posted_at_id", "posted_at", "id"),
+        # Dashboard and analytics ranges.
+        Index("ix_leads_first_seen_at", "first_seen_at"),
+        Index("ix_leads_last_verified_at", "last_verified_at"),
+        Index("ix_leads_status_workspace", "status", "workspace_id"),
     )
 
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
@@ -94,7 +98,10 @@ class HiringSignal(UUIDPrimaryKey, Base):
     """A dated hiring event for a company, optionally tied to a specific lead. Scoped like Company."""
 
     __tablename__ = "hiring_signals"
-    __table_args__ = (Index("ix_hiring_signals_company_occurred", "company_id", "occurred_at"),)
+    __table_args__ = (
+        Index("ix_hiring_signals_company_occurred", "company_id", "occurred_at"),
+        Index("ix_hiring_signals_occurred_at", "occurred_at"),
+    )
 
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))

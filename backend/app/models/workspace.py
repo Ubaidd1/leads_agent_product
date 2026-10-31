@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, Timestamps, UUIDPrimaryKey
@@ -14,7 +14,11 @@ class Workspace(UUIDPrimaryKey, Timestamps, Base):
 
     name: Mapped[str] = mapped_column(String(200))
     default_currency: Mapped[str] = mapped_column(String(3), default="USD")
-    default_geography: Mapped[str] = mapped_column(String(64), default="Worldwide")
+    default_geography: Mapped[str] = mapped_column(String(64), default="worldwide")
+    # IANA name; dashboard and analytics group dates in this timezone.
+    reporting_timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
+    # Open leads scoring at or above this count as "qualified" (decision D2.4).
+    qualified_threshold: Mapped[int] = mapped_column(Integer, default=75, server_default="75")
     # Demo workspaces hold fixture data only; see scripts/seed_demo.py.
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 

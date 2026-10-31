@@ -67,6 +67,10 @@ def list_leads(db: Session, ctx: RequestContext, filters: repo.LeadFilters, **pa
     return _page([lead_summary(*row) for row in rows], total, paging["page"], paging["page_size"])
 
 
+def count_leads(db: Session, ctx: RequestContext, filters: repo.LeadFilters) -> int:
+    return repo.count_leads(db, ctx.workspace.id, filters)
+
+
 def get_lead_detail(db: Session, ctx: RequestContext, lead_id: uuid.UUID) -> LeadDetail:
     row = repo.get_lead(db, ctx.workspace.id, lead_id)
     if row is None:

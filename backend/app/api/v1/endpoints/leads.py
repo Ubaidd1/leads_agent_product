@@ -2,6 +2,8 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
 from app.api.deps import DB, Ctx, Paging
 from app.models.enums import HiringIntent
@@ -9,6 +11,7 @@ from app.repositories.catalog import LEAD_SORTS, LeadFilters, SortOrder
 from app.schemas.common import Page
 from app.schemas.constants import Region
 from app.schemas.leads import LeadDetail, LeadSummary, SavedLeadOut, SaveState
+from app.schemas.search import LeadCount, SearchCriteria
 from app.services import catalog as catalog_service
 
 router = APIRouter(tags=["leads"])
@@ -31,18 +34,21 @@ def lead_filters(
     company_id: Annotated[uuid.UUID | None, Query(alias="companyId")] = None,
     saved: bool = False,
 ) -> LeadFilters:
-    return LeadFilters(
-        q=q or None,
-        service_types=service_type,
-        technologies=technology,
-        technology_match=technology_match,
-        intents=intent,
-        regions=region,
-        freshness_days=freshness_days,
-        min_score=min_score,
-        company_id=company_id,
-        saved_only=saved,
-    )
+    # Built through SearchCriteria so /leads and saved searches validate filters identically.
+    try:
+        criteria = SearchCriteria(
+            q=q or None,
+            service_types=service_type,
+            technologies=technology,
+            technology_match=technology_match,
+            intents=intent,
+            regions=region,
+            freshness_days=freshness_days,
+            min_score=min_score,
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+    return criteria.to_filters(company_id=company_id, saved_only=saved)
 
 
 @router.get("/leads", response_model=Page[LeadSummary])
@@ -57,6 +63,12 @@ def list_leads(
     return catalog_service.list_leads(
         db, ctx, filters, sort=sort, order=order, page=paging.page, page_size=paging.page_size
     )
+
+
+@router.get("/leads/count", response_model=LeadCount)
+def count_leads(db: DB, ctx: Ctx, filters: Annotated[LeadFilters, Depends(lead_filters)]):
+    """Same filters as GET /leads; used for live match estimates."""
+    return LeadCount(total=catalog_service.count_leads(db, ctx, filters))
 
 
 @router.get("/leads/{lead_id}", response_model=LeadDetail)

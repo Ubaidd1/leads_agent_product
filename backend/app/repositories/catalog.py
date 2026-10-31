@@ -135,8 +135,23 @@ def list_leads(
     page: int,
     page_size: int,
 ) -> tuple[list, int]:
-    stmt = _ordered(lead_query(workspace_id, filters), LEAD_SORTS[sort], order, Lead.id)
-    return _paginate(db, stmt, page, page_size)
+    return list_query(db, lead_query(workspace_id, filters), sort=sort, order=order, page=page, page_size=page_size)
+
+
+def list_query(
+    db: Session, stmt: Select, *, sort: str, order: SortOrder, page: int, page_size: int
+) -> tuple[list, int]:
+    """Sorts and paginates any statement built on lead_query (rows start with Lead, Company, is_saved)."""
+    return _paginate(db, _ordered(stmt, LEAD_SORTS[sort], order, Lead.id), page, page_size)
+
+
+def count_leads(db: Session, workspace_id: uuid.UUID, filters: LeadFilters) -> int:
+    return db.scalar(select(func.count()).select_from(lead_ids_query(workspace_id, filters).subquery()))
+
+
+def lead_ids_query(workspace_id: uuid.UUID, filters: LeadFilters) -> Select:
+    """The same scope as lead_query, selecting only Lead.id (for counting, IN-subqueries and aggregates)."""
+    return lead_query(workspace_id, filters).with_only_columns(Lead.id)
 
 
 def get_lead(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID):
