@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 from alembic.config import Config
@@ -15,10 +16,12 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import error_body, register_exception_handlers
 from app.core.logging import configure_logging, request_id_var
+from app.utils.time import utcnow
 
 settings = get_settings()
 logger = logging.getLogger("app.request")
 
+WORKER_STALE_AFTER = timedelta(minutes=2)
 ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
 
 SECURITY_HEADERS = {
@@ -107,7 +110,16 @@ def create_app() -> FastAPI:
             logger.exception("Readiness check failed")
             checks["database"] = "unavailable"
         ok = all(value == "ok" for value in checks.values()) and "migrations" in checks
-        return JSONResponse({"status": "ok" if ok else "unavailable", "checks": checks}, status_code=200 if ok else 503)
+        body = {"status": "ok" if ok else "unavailable", "checks": checks}
+        if checks.get("migrations") == "ok":
+            # Warning only: the API keeps serving when background jobs are delayed.
+            last_seen = db.execute(text("SELECT max(last_seen_at) FROM worker_heartbeats")).scalar()
+            body["warnings"] = {
+                "worker": "not_running"
+                if last_seen is None
+                else ("stale" if last_seen < utcnow() - WORKER_STALE_AFTER else "ok")
+            }
+        return JSONResponse(body, status_code=200 if ok else 503)
 
     app.include_router(api_router)
     return app

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import alerts, analytics, auth, companies, leads, me, saved_searches, workspace
+from app.api.v1.endpoints import alerts, analytics, auth, companies, exports, leads, me, saved_searches, workspace
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -11,3 +11,4 @@ api_router.include_router(companies.router)
 api_router.include_router(saved_searches.router)
 api_router.include_router(alerts.router)
 api_router.include_router(analytics.router)
+api_router.include_router(exports.router)

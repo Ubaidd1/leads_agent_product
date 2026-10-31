@@ -71,6 +71,32 @@ class DeliveryStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DEAD = "dead"
+
+
+class ExportFormat(StrEnum):
+    CSV = "csv"
+    XLSX = "xlsx"
+
+
+class ExportSelection(StrEnum):
+    IDS = "ids"
+    FILTERS = "filters"
+
+
+class ExportStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
 def str_enum(enum_cls: type[StrEnum], name: str) -> Enum:
     """Store enum values as VARCHAR + CHECK constraint (easier to evolve than native PG enums)."""
     return Enum(
